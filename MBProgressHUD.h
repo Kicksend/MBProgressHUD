@@ -315,6 +315,16 @@ typedef enum {
 - (void)hide:(BOOL)animated;
 
 /** 
+ * Hide the HUD after a delay. This still calls the hudWasHidden delegate. This is the counterpart of the hide: method. Use it to
+ * hide the HUD when your task completes.
+ *
+ * @param animated If set to YES the HUD will disappear using the current animationType. If set to NO the HUD will not use
+ * animations while disappearing.
+ * @param delay Delay in secons until the HUD is hidden.
+ */
+- (void)hide:(BOOL)animated afterDelay:(NSTimeInterval)delay;
+
+/** 
  * Shows the HUD while a background task is executing in a new thread, then hides the HUD.
  *
  * This method also takes care of NSAutoreleasePools so your method does not have to be concerned with setting up a
