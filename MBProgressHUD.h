@@ -6,7 +6,7 @@
 
 // This code is distributed under the terms and conditions of the MIT license. 
 
-// Copyright (c) 2009 Matej Bukovinski
+// Copyright (c) 2011 Matej Bukovinski
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -28,6 +28,8 @@
 
 #import <UIKit/UIKit.h>
 
+@protocol MBProgressHUDDelegate;
+
 /////////////////////////////////////////////////////////////////////////////////////////////
 
 typedef enum {
@@ -45,34 +47,6 @@ typedef enum {
     /** Opacity + scale animation */
     MBProgressHUDAnimationZoom
 } MBProgressHUDAnimation;
-
-/////////////////////////////////////////////////////////////////////////////////////////////
-
-@protocol MBProgressHUDDelegate <NSObject>
-
-@required
-
-/** 
- * A callback function that is called after the HUD was fully hidden from the screen. 
- */
-- (void)hudWasHidden;
-
-@end
-
-/////////////////////////////////////////////////////////////////////////////////////////////
-
-/**
- * A progress view for showing definite progress by filling up a circle (similar to the indicator for building in xcode).
- */
-@interface MBRoundProgressView : UIProgressView {}
-
-/**
- * Create a 37 by 37 pixel indicator. 
- * This is the same size as used by the larger UIActivityIndicatorView.
- */
-- (id)initWithDefaultSize;
-
-@end
 
 /////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -110,7 +84,12 @@ typedef enum {
 	float width;
 	float height;
 	
+	CGSize minSize;
+	BOOL square;
+	
 	float margin;
+	
+	BOOL dimBackground;
 	
 	BOOL taskInProgress;
 	float graceTime;
@@ -125,8 +104,14 @@ typedef enum {
 	
 	float progress;
 	
+#if __has_feature(objc_arc_weak)
+	id<MBProgressHUDDelegate> __weak delegate;
+#elif __has_feature(objc_arc)
+	id<MBProgressHUDDelegate> __unsafe_unretained delegate;
+#else
 	id<MBProgressHUDDelegate> delegate;
-	NSString *labelText;
+#endif
+    NSString *labelText;
 	NSString *detailsLabelText;
 	float opacity;
 	UIFont *labelFont;
@@ -141,7 +126,7 @@ typedef enum {
 }
 
 /**
- * Creates a new hud, adds it to provided view and shows it. The counterpart to this method is hideHUDForView:animated:.
+ * Creates a new HUD, adds it to provided view and shows it. The counterpart to this method is hideHUDForView:animated:.
  * 
  * @param view The view that the HUD will be added to
  * @param animated If set to YES the HUD will disappear using the current animationType. If set to NO the HUD will not use
@@ -153,7 +138,7 @@ typedef enum {
 + (MBProgressHUD *)showHUDAddedTo:(UIView *)view animated:(BOOL)animated;
 
 /**
- * Finds a HUD sibview and hides it. The counterpart to this method is showHUDAddedTo:animated:.
+ * Finds a HUD subview and hides it. The counterpart to this method is showHUDAddedTo:animated:.
  *
  * @param view The view that is going to be searched for a HUD subview.
  * @param animated If set to YES the HUD will disappear using the current animationType. If set to NO the HUD will not use
@@ -186,7 +171,11 @@ typedef enum {
  * The UIView (i.g., a UIIMageView) to be shown when the HUD is in MBProgressHUDModeCustomView.
  * For best results use a 37 by 37 pixel view (so the bounds match the build in indicator bounds). 
  */
+#if __has_feature(objc_arc)
+@property (strong) UIView *customView;
+#else
 @property (retain) UIView *customView;
+#endif
 
 /** 
  * MBProgressHUD operation mode. Switches between indeterminate (MBProgressHUDModeIndeterminate) and determinate
@@ -208,7 +197,13 @@ typedef enum {
  * delegate should conform to the MBProgressHUDDelegate protocol and implement the hudWasHidden method. The delegate
  * object will not be retained.
  */
+#if __has_feature(objc_arc_weak)
+@property (weak) id<MBProgressHUDDelegate> delegate;
+#elif __has_feature(objc_arc)
+@property (unsafe_unretained) id<MBProgressHUDDelegate> delegate;
+#else
 @property (assign) id<MBProgressHUDDelegate> delegate;
+#endif
 
 /** 
  * An optional short message to be displayed below the activity indicator. The HUD is automatically resized to fit
@@ -244,6 +239,11 @@ typedef enum {
  * Defaults to 20.0
  */
 @property (assign) float margin;
+
+/** 
+ * Cover the HUD background view with a radial gradient. 
+ */
+@property (assign) BOOL dimBackground;
 
 /*
  * Grace period is the time (in seconds) that the invoked method may be run without 
@@ -283,22 +283,45 @@ typedef enum {
 /** 
  * Font to be used for the main label. Set this property if the default is not adequate. 
  */
+#if __has_feature(objc_arc)
+@property (strong) UIFont* labelFont;
+#else
 @property (retain) UIFont* labelFont;
+#endif
 
 /** 
  * Font to be used for the details label. Set this property if the default is not adequate. 
  */
+#if __has_feature(objc_arc)
+@property (strong) UIFont* detailsLabelFont;
+#else
 @property (retain) UIFont* detailsLabelFont;
+#endif
 
 /** 
  * The progress of the progress indicator, from 0.0 to 1.0. Defaults to 0.0. 
  */
 @property (assign) float progress;
 
+/**
+ * The minimum size of the HUD bezel. Defaults to CGSizeZero.
+ */
+@property (assign) CGSize minSize;
+
+/**
+ * Force the HUD dimensions to be equal if possible. 
+ */
+@property (assign, getter = isSquare) BOOL square;
+
 /** 
  * Display the HUD. You need to make sure that the main thread completes its run loop soon after this method call so
  * the user interface can be updated. Call this method when your task is already set-up to be executed in a new thread
  * (e.g., when using something like NSOperation or calling an asynchronous call like NSUrlRequest).
+ *
+ * If you need to perform a blocking thask on the main thread, you can try spining the run loop imeidiately after calling this 
+ * method by using:
+ *
+ * [[NSRunLoop currentRunLoop] runUntilDate:[NSDate distantPast]];
  *
  * @param animated If set to YES the HUD will disappear using the current animationType. If set to NO the HUD will not use
  * animations while disappearing.
@@ -306,7 +329,7 @@ typedef enum {
 - (void)show:(BOOL)animated;
 
 /** 
- * Hide the HUD, this still calls the hudWasHidden delegate. This is the counterpart of the hide: method. Use it to
+ * Hide the HUD. This still calls the hudWasHidden delegate. This is the counterpart of the hide: method. Use it to
  * hide the HUD when your task completes.
  *
  * @param animated If set to YES the HUD will disappear using the current animationType. If set to NO the HUD will not use
@@ -339,3 +362,42 @@ typedef enum {
 - (void)showWhileExecuting:(SEL)method onTarget:(id)target withObject:(id)object animated:(BOOL)animated;
 
 @end
+
+/////////////////////////////////////////////////////////////////////////////////////////////
+
+@protocol MBProgressHUDDelegate <NSObject>
+
+@optional
+
+/** 
+ * Called after the HUD was fully hidden from the screen. 
+ */
+- (void)hudWasHidden:(MBProgressHUD *)hud;
+
+/**
+ * @deprecated use hudWasHidden: instead
+ * @see hudWasHidden:
+ */
+- (void)hudWasHidden __attribute__ ((deprecated)); 
+
+@end
+
+/////////////////////////////////////////////////////////////////////////////////////////////
+
+/**
+ * A progress view for showing definite progress by filling up a circle (pie chart).
+ */
+@interface MBRoundProgressView : UIView {
+@private
+    float _progress;
+}
+
+/**
+ * Progress (0.0 to 1.0)
+ */
+@property (nonatomic, assign) float progress;
+
+@end
+
+/////////////////////////////////////////////////////////////////////////////////////////////
+
